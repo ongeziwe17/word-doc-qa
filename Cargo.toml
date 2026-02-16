@@ -1,0 +1,15 @@
+[package]
+name = "word-doc-qa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+burn = { version = "0.13", features = ["ndarray"] }
+docx-rs = "0.4"
+tokenizers = "0.15"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+log = "0.4"
+env_logger = "0.10"
