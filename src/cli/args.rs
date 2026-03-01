@@ -37,4 +37,6 @@ pub struct AskArgs {
     pub top_k: usize,
     #[arg(long, default_value_t = 24)]
     pub max_answer_words: usize,
+    #[arg(long, default_value = "./checkpoints")]
+    pub checkpoint_dir: String,
 }

@@ -5,7 +5,9 @@ use crate::data::load_corpus_from_dir;
 use crate::inference::answer_question;
 use crate::model::QaModelConfig;
 use crate::tokenization::{build_tokenizer_from_texts, build_weak_supervised_samples};
-use crate::train::{TrainConfig, load_latest_checkpoint, train_weak_supervised};
+use crate::train::{
+    TrainConfig, evaluate_on_samples, load_latest_checkpoint, train_weak_supervised,
+};
 
 pub fn run_train(args: TrainArgs) -> Result<()> {
     let chunks = load_corpus_from_dir(&args.data_dir, args.max_chars)?;
@@ -46,6 +48,12 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
         );
     }
 
+    let eval = evaluate_on_samples(&qa_samples, Some(&summary.model_state));
+    println!(
+        "Eval => EM: {:.3}, F1: {:.3}, samples: {}",
+        eval.exact_match, eval.token_f1, eval.total
+    );
+
     Ok(())
 }
 
@@ -58,7 +66,7 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
         return Ok(());
     }
 
-    let checkpoint = load_latest_checkpoint("./checkpoints")?;
+    let checkpoint = load_latest_checkpoint(&args.checkpoint_dir)?;
     let model_state = checkpoint.as_ref().map(|c| &c.model_state);
 
     match answer_question(
