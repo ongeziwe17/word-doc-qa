@@ -5,9 +5,6 @@ use anyhow::Result;
 use data::load_corpus_from_dir;
 use tokenization::{build_tokenizer_from_texts, pad_and_create_batch};
 
-use anyhow::Result;
-use data::load_corpus_from_dir;
-
 fn main() -> Result<()> {
     env_logger::init();
 

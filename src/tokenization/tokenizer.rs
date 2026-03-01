@@ -57,8 +57,8 @@ pub fn build_tokenizer_from_texts(texts: &[String], vocab_limit: usize) -> Resul
         .with_context(|| "failed to build word-level tokenizer model")?;
 
     let mut tokenizer = Tokenizer::new(model);
-    tokenizer.with_normalizer(Some(NFC.into()));
-    tokenizer.with_pre_tokenizer(Some(Whitespace));
+    tokenizer.with_normalizer(NFC);
+    tokenizer.with_pre_tokenizer(Whitespace);
 
     Ok(QaTokenizer {
         tokenizer,
