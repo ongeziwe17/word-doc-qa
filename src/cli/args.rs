@@ -33,4 +33,8 @@ pub struct AskArgs {
     pub data_dir: String,
     #[arg(long, default_value_t = 1000)]
     pub max_chars: usize,
+    #[arg(long, default_value_t = 3)]
+    pub top_k: usize,
+    #[arg(long, default_value_t = 24)]
+    pub max_answer_words: usize,
 }

@@ -10,11 +10,16 @@ pub struct AnswerPrediction {
     pub retrieval_score: f64,
 }
 
-pub fn answer_question(chunks: &[Chunk], question: &str) -> Option<AnswerPrediction> {
-    let top = retrieve_top_k(chunks, question, 1);
+pub fn answer_question(
+    chunks: &[Chunk],
+    question: &str,
+    top_k: usize,
+    max_answer_words: usize,
+) -> Option<AnswerPrediction> {
+    let top = retrieve_top_k(chunks, question, top_k.max(1));
     let best = top.first()?;
 
-    let answer = best_span_text(&best.chunk.text, 24);
+    let answer = best_span_text(&best.chunk.text, question, max_answer_words);
 
     Some(AnswerPrediction {
         answer,
@@ -45,7 +50,8 @@ mod tests {
             },
         ];
 
-        let pred = answer_question(&chunks, "How does Rust handle memory?").expect("prediction");
+        let pred =
+            answer_question(&chunks, "How does Rust handle memory?", 3, 24).expect("prediction");
         assert_eq!(pred.source_doc, "doc_rust");
         assert!(pred.answer.to_lowercase().contains("rust"));
     }
