@@ -1,11 +1,12 @@
 use burn::module::Module;
 use burn::tensor::{Int, Tensor, backend::Backend};
+use serde::{Deserialize, Serialize};
 
 use crate::model::embeddings::TokenEmbeddings;
 use crate::model::qa_head::QaHead;
 use crate::model::transformer::TransformerEncoder;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaModelConfig {
     pub vocab_size: usize,
     pub d_model: usize,

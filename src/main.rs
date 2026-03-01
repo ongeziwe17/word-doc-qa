@@ -1,6 +1,7 @@
 mod data;
 mod model;
 mod tokenization;
+mod train;
 
 use anyhow::Result;
 use data::load_corpus_from_dir;
@@ -9,6 +10,7 @@ use tokenization::{
     build_tokenizer_from_texts, build_weak_supervised_samples, pad_and_create_batch,
     pad_and_create_qa_batch,
 };
+use train::{TrainConfig, load_latest_checkpoint, train_weak_supervised};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -61,6 +63,20 @@ fn main() -> Result<()> {
             model_config.ff_dim,
             model_config.effective_num_layers()
         );
+
+        let train_config = TrainConfig::default();
+        let summary = train_weak_supervised(&qa_samples, &model_config, &train_config)?;
+        println!(
+            "Training => epochs: {}, final_avg_loss: {:.4}",
+            summary.epochs_completed, summary.final_avg_loss
+        );
+
+        if let Some(last_ckpt) = load_latest_checkpoint(&train_config.checkpoint_dir)? {
+            println!(
+                "Checkpoint => epoch: {}, avg_loss: {:.4}",
+                last_ckpt.epoch, last_ckpt.avg_loss
+            );
+        }
     } else {
         println!("No chunks found. Add .docx files to ./data");
     }
