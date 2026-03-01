@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::model::QaModelConfig;
 use crate::train::config::TrainConfig;
+use crate::train::trainer::{LinearSpanModelState, OptimizerState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingCheckpoint {
@@ -12,6 +13,8 @@ pub struct TrainingCheckpoint {
     pub avg_loss: f64,
     pub model_config: QaModelConfig,
     pub train_config: TrainConfig,
+    pub model_state: LinearSpanModelState,
+    pub optimizer_state: OptimizerState,
 }
 
 pub fn save_checkpoint(dir: &str, ckpt: &TrainingCheckpoint) -> Result<PathBuf> {
@@ -51,6 +54,7 @@ mod tests {
     use super::{TrainingCheckpoint, load_latest_checkpoint, save_checkpoint};
     use crate::model::QaModelConfig;
     use crate::train::config::TrainConfig;
+    use crate::train::trainer::{LinearSpanModelState, OptimizerState};
 
     #[test]
     fn saves_and_loads_checkpoint() {
@@ -60,6 +64,14 @@ mod tests {
             avg_loss: 0.5,
             model_config: QaModelConfig::default(),
             train_config: TrainConfig::default(),
+            model_state: LinearSpanModelState {
+                start_bias: vec![0.1, 0.2],
+                end_bias: vec![0.3, 0.4],
+            },
+            optimizer_state: OptimizerState {
+                step: 3,
+                learning_rate: 0.001,
+            },
         };
 
         let _ = save_checkpoint(dir, &ckpt).expect("save checkpoint");
@@ -67,5 +79,6 @@ mod tests {
 
         assert_eq!(loaded.epoch, 1);
         assert_eq!(loaded.avg_loss, 0.5);
+        assert_eq!(loaded.optimizer_state.step, 3);
     }
 }

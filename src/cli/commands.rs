@@ -41,8 +41,8 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
 
     if let Some(last_ckpt) = load_latest_checkpoint(&train_config.checkpoint_dir)? {
         println!(
-            "Latest checkpoint => epoch: {}, avg_loss: {:.4}",
-            last_ckpt.epoch, last_ckpt.avg_loss
+            "Latest checkpoint => epoch: {}, avg_loss: {:.4}, opt_step: {}",
+            last_ckpt.epoch, last_ckpt.avg_loss, last_ckpt.optimizer_state.step
         );
     }
 
@@ -58,7 +58,16 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
         return Ok(());
     }
 
-    match answer_question(&chunks, &args.question, args.top_k, args.max_answer_words) {
+    let checkpoint = load_latest_checkpoint("./checkpoints")?;
+    let model_state = checkpoint.as_ref().map(|c| &c.model_state);
+
+    match answer_question(
+        &chunks,
+        &args.question,
+        args.top_k,
+        args.max_answer_words,
+        model_state,
+    ) {
         Some(pred) => {
             println!(
                 "Answer => {}\nSource => {}#{}\nScore => {:.3}",
