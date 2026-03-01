@@ -3,7 +3,10 @@ mod tokenization;
 
 use anyhow::Result;
 use data::load_corpus_from_dir;
-use tokenization::{build_tokenizer_from_texts, pad_and_create_batch};
+use tokenization::{
+    build_tokenizer_from_texts, build_weak_supervised_samples, pad_and_create_batch,
+    pad_and_create_qa_batch,
+};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -35,6 +38,18 @@ fn main() -> Result<()> {
             "Tokenization => batch_size: {}, seq_len: {}",
             batch.input_ids.len(),
             seq_len
+        );
+
+        let qa_samples = build_weak_supervised_samples(&texts, &tokenizer, 64)?;
+        let qa_take_n = usize::min(2, qa_samples.len());
+        let qa_batch = pad_and_create_qa_batch(&qa_samples[..qa_take_n], tokenizer.pad_id());
+
+        println!(
+            "Weak QA dataset => samples: {}, batch_size: {}, first_span: ({}, {})",
+            qa_samples.len(),
+            qa_batch.input_ids.len(),
+            qa_batch.start_positions.first().copied().unwrap_or(0),
+            qa_batch.end_positions.first().copied().unwrap_or(0)
         );
     } else {
         println!("No chunks found. Add .docx files to ./data");
