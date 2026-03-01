@@ -1,8 +1,10 @@
 mod data;
+mod model;
 mod tokenization;
 
 use anyhow::Result;
 use data::load_corpus_from_dir;
+use model::QaModelConfig;
 use tokenization::{
     build_tokenizer_from_texts, build_weak_supervised_samples, pad_and_create_batch,
     pad_and_create_qa_batch,
@@ -50,6 +52,14 @@ fn main() -> Result<()> {
             qa_batch.input_ids.len(),
             qa_batch.start_positions.first().copied().unwrap_or(0),
             qa_batch.end_positions.first().copied().unwrap_or(0)
+        );
+
+        let model_config = QaModelConfig::default();
+        println!(
+            "Model config => d_model: {}, ff_dim: {}, encoder_layers: {}",
+            model_config.d_model,
+            model_config.ff_dim,
+            model_config.effective_num_layers()
         );
     } else {
         println!("No chunks found. Add .docx files to ./data");
