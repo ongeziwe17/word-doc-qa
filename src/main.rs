@@ -1,10 +1,12 @@
 mod data;
+mod inference;
 mod model;
 mod tokenization;
 mod train;
 
 use anyhow::Result;
 use data::load_corpus_from_dir;
+use inference::answer_question;
 use model::QaModelConfig;
 use tokenization::{
     build_tokenizer_from_texts, build_weak_supervised_samples, pad_and_create_batch,
@@ -75,6 +77,17 @@ fn main() -> Result<()> {
             println!(
                 "Checkpoint => epoch: {}, avg_loss: {:.4}",
                 last_ckpt.epoch, last_ckpt.avg_loss
+            );
+        }
+        let question = "What is this document about?";
+        if let Some(prediction) = answer_question(&chunks, question) {
+            println!(
+                "Ask => q: {} | answer: {} | source: {}#{} | score: {:.3}",
+                question,
+                prediction.answer,
+                prediction.source_doc,
+                prediction.source_chunk_id,
+                prediction.retrieval_score
             );
         }
     } else {
