@@ -7,6 +7,7 @@ use crate::model::QaModelConfig;
 use crate::tokenization::qa_dataset::QaTrainingSample;
 use crate::train::checkpoint::{TrainingCheckpoint, save_checkpoint};
 use crate::train::config::TrainConfig;
+use crate::train::eval::evaluate_on_samples;
 use crate::train::metrics::{EpochMetrics, TrainingHistory};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +85,12 @@ pub fn train_weak_supervised(
         } else {
             0.0
         };
+
+        let eval = evaluate_on_samples(samples, Some(&model_state));
+        println!(
+            "epoch {epoch} => loss: {avg_loss:.4}, em: {:.3}, f1: {:.3}",
+            eval.exact_match, eval.token_f1
+        );
 
         let metrics = EpochMetrics {
             epoch,

@@ -26,6 +26,14 @@ pub fn save_checkpoint(dir: &str, ckpt: &TrainingCheckpoint) -> Result<PathBuf> 
     Ok(path)
 }
 
+pub fn load_checkpoint(path: &str) -> Result<TrainingCheckpoint> {
+    let checkpoint_path = Path::new(path);
+    let content = fs::read_to_string(checkpoint_path)
+        .with_context(|| format!("failed reading checkpoint: {}", checkpoint_path.display()))?;
+    serde_json::from_str::<TrainingCheckpoint>(&content)
+        .with_context(|| format!("failed parsing checkpoint: {}", checkpoint_path.display()))
+}
+
 pub fn load_latest_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
     let base = Path::new(dir);
     if !base.exists() {
@@ -42,16 +50,16 @@ pub fn load_latest_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
         return Ok(None);
     };
 
-    let content = fs::read_to_string(last)
-        .with_context(|| format!("failed reading checkpoint: {}", last.display()))?;
-    let ckpt = serde_json::from_str::<TrainingCheckpoint>(&content)
-        .with_context(|| format!("failed parsing checkpoint: {}", last.display()))?;
+    let ckpt = load_checkpoint(
+        last.to_str()
+            .ok_or_else(|| anyhow::anyhow!("non-utf8 checkpoint path"))?,
+    )?;
     Ok(Some(ckpt))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TrainingCheckpoint, load_latest_checkpoint, save_checkpoint};
+    use super::{TrainingCheckpoint, load_checkpoint, load_latest_checkpoint, save_checkpoint};
     use crate::model::QaModelConfig;
     use crate::train::config::TrainConfig;
     use crate::train::trainer::{LinearSpanModelState, OptimizerState};
@@ -74,11 +82,13 @@ mod tests {
             },
         };
 
-        let _ = save_checkpoint(dir, &ckpt).expect("save checkpoint");
+        let path = save_checkpoint(dir, &ckpt).expect("save checkpoint");
         let loaded = load_latest_checkpoint(dir).expect("load").expect("exists");
+        let direct = load_checkpoint(path.to_str().expect("utf8 path")).expect("direct load");
 
         assert_eq!(loaded.epoch, 1);
         assert_eq!(loaded.avg_loss, 0.5);
         assert_eq!(loaded.optimizer_state.step, 3);
+        assert_eq!(direct.epoch, loaded.epoch);
     }
 }

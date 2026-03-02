@@ -6,7 +6,8 @@ use crate::inference::answer_question;
 use crate::model::QaModelConfig;
 use crate::tokenization::{build_tokenizer_from_texts, build_weak_supervised_samples};
 use crate::train::{
-    TrainConfig, evaluate_on_samples, load_latest_checkpoint, train_weak_supervised,
+    TrainConfig, evaluate_on_samples, load_checkpoint, load_latest_checkpoint,
+    train_weak_supervised,
 };
 
 pub fn run_train(args: TrainArgs) -> Result<()> {
@@ -26,6 +27,8 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
     let train_config = TrainConfig {
         epochs: args.epochs,
         batch_size: args.batch_size,
+        learning_rate: args.lr,
+        checkpoint_dir: args.checkpoint_dir,
         ..TrainConfig::default()
     };
 
@@ -66,14 +69,19 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
         return Ok(());
     }
 
-    let checkpoint = load_latest_checkpoint(&args.checkpoint_dir)?;
+    let checkpoint = if let Some(path) = args.checkpoint_path.as_ref() {
+        Some(load_checkpoint(path)?)
+    } else {
+        load_latest_checkpoint(&args.checkpoint_dir)?
+    };
+
     let model_state = checkpoint.as_ref().map(|c| &c.model_state);
 
     match answer_question(
         &chunks,
         &args.question,
         args.top_k,
-        args.max_answer_words,
+        args.max_answer_len,
         model_state,
     ) {
         Some(pred) => {

@@ -16,7 +16,7 @@ pub fn answer_question(
     chunks: &[Chunk],
     question: &str,
     top_k: usize,
-    max_answer_words: usize,
+    max_answer_len: usize,
     model_state: Option<&LinearSpanModelState>,
 ) -> Option<AnswerPrediction> {
     let top = retrieve_top_k(chunks, question, top_k.max(1));
@@ -29,8 +29,8 @@ pub fn answer_question(
         let (start_logits, end_logits, tokens) =
             compute_token_logits(&candidate.chunk.text, question, start_prior, end_prior);
         let (start, end, span_score) =
-            best_span_from_logits(&start_logits, &end_logits, max_answer_words)?;
-        let answer = span_text(&tokens, start, end, max_answer_words);
+            best_span_from_logits(&start_logits, &end_logits, max_answer_len)?;
+        let answer = span_text(&tokens, start, end, max_answer_len);
 
         let pred = AnswerPrediction {
             answer,

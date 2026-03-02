@@ -23,6 +23,10 @@ pub struct TrainArgs {
     pub epochs: usize,
     #[arg(long, default_value_t = 4)]
     pub batch_size: usize,
+    #[arg(long, default_value_t = 1e-3)]
+    pub lr: f64,
+    #[arg(long, default_value = "./checkpoints")]
+    pub checkpoint_dir: String,
 }
 
 #[derive(Debug, Args)]
@@ -35,8 +39,10 @@ pub struct AskArgs {
     pub max_chars: usize,
     #[arg(long, default_value_t = 3)]
     pub top_k: usize,
-    #[arg(long, default_value_t = 24)]
-    pub max_answer_words: usize,
+    #[arg(long, default_value_t = 24, alias = "max-answer-words")]
+    pub max_answer_len: usize,
     #[arg(long, default_value = "./checkpoints")]
     pub checkpoint_dir: String,
+    #[arg(long)]
+    pub checkpoint_path: Option<String>,
 }
