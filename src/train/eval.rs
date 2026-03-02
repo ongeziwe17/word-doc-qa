@@ -1,7 +1,7 @@
 use crate::data::corpus::Chunk;
 use crate::inference::answer_question;
+use crate::model::QaModel;
 use crate::tokenization::qa_dataset::QaTrainingSample;
-use crate::train::trainer::LinearSpanModelState;
 
 #[derive(Debug, Clone, Default)]
 pub struct EvalMetrics {
@@ -10,10 +10,7 @@ pub struct EvalMetrics {
     pub total: usize,
 }
 
-pub fn evaluate_on_samples(
-    samples: &[QaTrainingSample],
-    model_state: Option<&LinearSpanModelState>,
-) -> EvalMetrics {
+pub fn evaluate_on_samples(samples: &[QaTrainingSample], model: Option<&QaModel>) -> EvalMetrics {
     if samples.is_empty() {
         return EvalMetrics::default();
     }
@@ -33,7 +30,7 @@ pub fn evaluate_on_samples(
             &sample.question,
             1,
             sample.answer_text.split_whitespace().count().max(1),
-            model_state,
+            model,
         )
         .map(|p| p.answer)
         .unwrap_or_default();

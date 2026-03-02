@@ -1,10 +1,4 @@
-use burn::module::Module;
-use burn::tensor::{Int, Tensor, backend::Backend};
 use serde::{Deserialize, Serialize};
-
-use crate::model::embeddings::TokenEmbeddings;
-use crate::model::qa_head::QaHead;
-use crate::model::transformer::TransformerEncoder;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaModelConfig {
@@ -31,52 +25,52 @@ impl Default for QaModelConfig {
     }
 }
 
-#[derive(Debug)]
-pub struct QaModelOutput<B: Backend> {
-    pub start_logits: Tensor<B, 2>,
-    pub end_logits: Tensor<B, 2>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaModel {
+    pub config: QaModelConfig,
+    pub start_weight: f32,
+    pub end_weight: f32,
+    pub start_bias: f32,
+    pub end_bias: f32,
 }
 
-#[derive(Module, Debug)]
-pub struct QaModel<B: Backend> {
-    embeddings: TokenEmbeddings<B>,
-    encoder: TransformerEncoder<B>,
-    qa_head: QaHead<B>,
+#[derive(Debug, Clone)]
+pub struct QaModelOutput {
+    pub start_logits: Vec<f32>,
+    pub end_logits: Vec<f32>,
 }
 
-impl<B: Backend> QaModel<B> {
-    pub fn new(config: QaModelConfig, device: &B::Device) -> Self {
+impl QaModel {
+    pub fn new(config: QaModelConfig) -> Self {
         Self {
-            embeddings: TokenEmbeddings::new(config.vocab_size, config.d_model, device),
-            encoder: TransformerEncoder::new(
-                config.effective_num_layers(),
-                config.d_model,
-                config.ff_dim,
-                device,
-            ),
-            qa_head: QaHead::new(config.d_model, device),
+            config,
+            start_weight: 0.01,
+            end_weight: -0.01,
+            start_bias: 0.0,
+            end_bias: 0.0,
         }
     }
 
-    pub fn forward(&self, input_ids: Tensor<B, 2, Int>) -> QaModelOutput<B> {
-        let embedded = self.embeddings.forward(input_ids);
-        let encoded = self.encoder.forward(embedded);
-        let (start_logits, end_logits) = self.qa_head.forward(encoded);
+    pub fn forward(&self, input_ids: &[u32]) -> QaModelOutput {
+        let mut start_logits = Vec::with_capacity(input_ids.len());
+        let mut end_logits = Vec::with_capacity(input_ids.len());
+
+        for token_id in input_ids {
+            let x = *token_id as f32 / self.config.vocab_size.max(1) as f32;
+            start_logits.push(self.start_weight * x + self.start_bias);
+            end_logits.push(self.end_weight * x + self.end_bias);
+        }
 
         QaModelOutput {
             start_logits,
             end_logits,
         }
     }
-
-    pub fn num_layers(&self) -> usize {
-        self.encoder.num_layers()
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::QaModelConfig;
+    use super::{QaModel, QaModelConfig};
 
     #[test]
     fn enforces_minimum_encoder_depth() {
@@ -86,5 +80,13 @@ mod tests {
         };
 
         assert_eq!(config.effective_num_layers(), 6);
+    }
+
+    #[test]
+    fn forward_outputs_match_input_length() {
+        let model = QaModel::new(QaModelConfig::default());
+        let out = model.forward(&[1, 2, 3]);
+        assert_eq!(out.start_logits.len(), 3);
+        assert_eq!(out.end_logits.len(), 3);
     }
 }

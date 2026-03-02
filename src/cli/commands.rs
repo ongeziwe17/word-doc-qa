@@ -51,7 +51,7 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
         );
     }
 
-    let eval = evaluate_on_samples(&qa_samples, Some(&summary.model_state));
+    let eval = evaluate_on_samples(&qa_samples, Some(&summary.model));
     println!(
         "Eval => EM: {:.3}, F1: {:.3}, samples: {}",
         eval.exact_match, eval.token_f1, eval.total
@@ -75,14 +75,14 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
         load_latest_checkpoint(&args.checkpoint_dir)?
     };
 
-    let model_state = checkpoint.as_ref().map(|c| &c.model_state);
+    let model = checkpoint.as_ref().map(|c| &c.model);
 
     match answer_question(
         &chunks,
         &args.question,
         args.top_k,
         args.max_answer_len,
-        model_state,
+        model,
     ) {
         Some(pred) => {
             println!(

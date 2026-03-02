@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::model::QaModelConfig;
+use crate::model::{QaModel, QaModelConfig};
 use crate::train::config::TrainConfig;
-use crate::train::trainer::{LinearSpanModelState, OptimizerState};
+use crate::train::trainer::OptimizerState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingCheckpoint {
@@ -13,7 +13,7 @@ pub struct TrainingCheckpoint {
     pub avg_loss: f64,
     pub model_config: QaModelConfig,
     pub train_config: TrainConfig,
-    pub model_state: LinearSpanModelState,
+    pub model: QaModel,
     pub optimizer_state: OptimizerState,
 }
 
@@ -60,9 +60,9 @@ pub fn load_latest_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
 #[cfg(test)]
 mod tests {
     use super::{TrainingCheckpoint, load_checkpoint, load_latest_checkpoint, save_checkpoint};
-    use crate::model::QaModelConfig;
+    use crate::model::{QaModel, QaModelConfig};
     use crate::train::config::TrainConfig;
-    use crate::train::trainer::{LinearSpanModelState, OptimizerState};
+    use crate::train::trainer::OptimizerState;
 
     #[test]
     fn saves_and_loads_checkpoint() {
@@ -72,10 +72,7 @@ mod tests {
             avg_loss: 0.5,
             model_config: QaModelConfig::default(),
             train_config: TrainConfig::default(),
-            model_state: LinearSpanModelState {
-                start_bias: vec![0.1, 0.2],
-                end_bias: vec![0.3, 0.4],
-            },
+            model: QaModel::new(QaModelConfig::default()),
             optimizer_state: OptimizerState {
                 step: 3,
                 learning_rate: 0.001,
