@@ -39,13 +39,16 @@ pub fn train_weak_supervised(
         learning_rate: config.learning_rate as f32,
     };
 
+    let (train_samples, val_samples) = split_train_val(samples, config.val_split);
     let mut history = TrainingHistory::default();
+    let mut best_val_loss = f32::INFINITY;
+    let mut stale_epochs = 0usize;
 
     for epoch in 1..=config.epochs {
         let mut total_loss = 0.0f64;
         let mut seen = 0usize;
 
-        for batch in samples.chunks(config.batch_size.max(1)) {
+        for batch in train_samples.chunks(config.batch_size.max(1)) {
             let (batch_loss, grads) = batch_loss_and_grads(&model, batch);
             apply_sgd_step(&mut model, &mut opt_state, grads);
             total_loss += batch_loss as f64 * batch.len() as f64;
@@ -58,9 +61,15 @@ pub fn train_weak_supervised(
             0.0
         };
 
-        let eval = evaluate_on_samples(samples, Some(&model));
+        let val_loss = if val_samples.is_empty() {
+            avg_loss as f32
+        } else {
+            average_loss(&model, val_samples)
+        };
+
+        let eval = evaluate_on_samples(val_samples, Some(&model));
         println!(
-            "epoch {epoch} => loss: {avg_loss:.4}, em: {:.3}, f1: {:.3}",
+            "epoch {epoch} => train_loss: {avg_loss:.4}, val_loss: {val_loss:.4}, em: {:.3}, f1: {:.3}",
             eval.exact_match, eval.token_f1
         );
 
@@ -81,12 +90,22 @@ pub fn train_weak_supervised(
             optimizer_state: opt_state.clone(),
         };
         let _ = save_checkpoint(&config.checkpoint_dir, &checkpoint)?;
+
+        if val_loss + 1e-6 < best_val_loss {
+            best_val_loss = val_loss;
+            stale_epochs = 0;
+        } else {
+            stale_epochs += 1;
+            if stale_epochs >= config.early_stopping_patience.max(1) {
+                break;
+            }
+        }
     }
 
     let final_avg_loss = history.latest().map_or(0.0, |m| m.avg_loss);
 
     Ok(TrainingSummary {
-        epochs_completed: config.epochs,
+        epochs_completed: history.epochs.len(),
         final_avg_loss,
         history,
         model,
@@ -102,6 +121,48 @@ struct ModelGrads {
     end_bias: f32,
 }
 
+fn split_train_val(
+    samples: &[QaTrainingSample],
+    val_split: f32,
+) -> (&[QaTrainingSample], &[QaTrainingSample]) {
+    if samples.len() <= 1 {
+        return (samples, &[]);
+    }
+
+    let val_ratio = val_split.clamp(0.0, 0.8);
+    let train_len = ((samples.len() as f32) * (1.0 - val_ratio)).round() as usize;
+    let train_len = train_len.clamp(1, samples.len() - 1);
+    (&samples[..train_len], &samples[train_len..])
+}
+
+fn average_loss(model: &QaModel, samples: &[QaTrainingSample]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let mut total = 0.0;
+    for sample in samples {
+        total += sample_loss(model, sample);
+    }
+    total / samples.len() as f32
+}
+
+fn sample_loss(model: &QaModel, sample: &QaTrainingSample) -> f32 {
+    let output = model.forward(&sample.input_ids);
+    let valid_len = sample
+        .attention_mask
+        .iter()
+        .filter(|m| **m > 0)
+        .count()
+        .max(1);
+    let y_start = sample.start_position.min(valid_len - 1);
+    let y_end = sample.end_position.min(valid_len - 1);
+
+    let start_probs = softmax(&output.start_logits[..valid_len]);
+    let end_probs = softmax(&output.end_logits[..valid_len]);
+
+    -start_probs[y_start].max(1e-8).ln() - end_probs[y_end].max(1e-8).ln()
+}
+
 fn batch_loss_and_grads(model: &QaModel, batch: &[QaTrainingSample]) -> (f32, ModelGrads) {
     let mut loss = 0.0f32;
     let mut grads = ModelGrads {
@@ -113,12 +174,17 @@ fn batch_loss_and_grads(model: &QaModel, batch: &[QaTrainingSample]) -> (f32, Mo
 
     for sample in batch {
         let output = model.forward(&sample.input_ids);
-        let valid_len = sample.input_ids.len().max(1);
+        let valid_len = sample
+            .attention_mask
+            .iter()
+            .filter(|m| **m > 0)
+            .count()
+            .max(1);
         let y_start = sample.start_position.min(valid_len - 1);
         let y_end = sample.end_position.min(valid_len - 1);
 
-        let start_probs = softmax(&output.start_logits);
-        let end_probs = softmax(&output.end_logits);
+        let start_probs = softmax(&output.start_logits[..valid_len]);
+        let end_probs = softmax(&output.end_logits[..valid_len]);
 
         loss += -start_probs[y_start].max(1e-8).ln();
         loss += -end_probs[y_end].max(1e-8).ln();
@@ -197,8 +263,8 @@ mod tests {
         let summary = train_weak_supervised(&samples, &QaModelConfig::default(), &config)
             .expect("train should succeed");
 
-        assert_eq!(summary.epochs_completed, 2);
-        assert_eq!(summary.history.epochs.len(), 2);
+        assert!(summary.epochs_completed >= 1);
+        assert!(!summary.history.epochs.is_empty());
         assert!(summary.optimizer_state.step > 0);
     }
 }

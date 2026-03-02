@@ -9,6 +9,7 @@ pub struct QaModelConfig {
 }
 
 impl QaModelConfig {
+    #[allow(dead_code)]
     pub fn effective_num_layers(&self) -> usize {
         usize::max(6, self.num_layers)
     }

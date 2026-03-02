@@ -17,7 +17,6 @@ pub struct TokenizedText {
 #[derive(Debug, Clone)]
 pub struct QaTokenizer {
     tokenizer: Tokenizer,
-    pad_id: u32,
 }
 
 impl QaTokenizer {
@@ -40,10 +39,6 @@ impl QaTokenizer {
             attention_mask,
         })
     }
-
-    pub fn pad_id(&self) -> u32 {
-        self.pad_id
-    }
 }
 
 pub fn build_tokenizer_from_texts(texts: &[String], vocab_limit: usize) -> Result<QaTokenizer> {
@@ -60,10 +55,7 @@ pub fn build_tokenizer_from_texts(texts: &[String], vocab_limit: usize) -> Resul
     tokenizer.with_normalizer(NFC);
     tokenizer.with_pre_tokenizer(Whitespace);
 
-    Ok(QaTokenizer {
-        tokenizer,
-        pad_id: 0,
-    })
+    Ok(QaTokenizer { tokenizer })
 }
 
 fn build_vocab(texts: &[String], vocab_limit: usize) -> HashMap<String, u32> {

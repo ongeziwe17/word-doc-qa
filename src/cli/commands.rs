@@ -39,8 +39,8 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
     );
     if let Some(last_epoch) = summary.history.latest() {
         println!(
-            "Last epoch stats => epoch: {}, samples_seen: {}",
-            last_epoch.epoch, last_epoch.samples_seen
+            "Last epoch stats => epoch: {}, samples_seen: {}, optimizer_steps: {}",
+            last_epoch.epoch, last_epoch.samples_seen, summary.optimizer_state.step
         );
     }
 

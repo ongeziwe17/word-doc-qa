@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::tokenization::qa_dataset::QaTrainingSample;
 use crate::tokenization::tokenizer::TokenizedText;
 
