@@ -43,7 +43,7 @@ pub fn best_span_from_logits(
     start_logits: &[f32],
     end_logits: &[f32],
     max_answer_len: usize,
-) -> Option<(usize, usize)> {
+) -> Option<(usize, usize, f32)> {
     if start_logits.is_empty() || end_logits.is_empty() {
         return None;
     }
@@ -58,7 +58,7 @@ pub fn best_span_from_logits(
             let score = start_logits[s] + end_logits[e];
             if score > best_score {
                 best_score = score;
-                best = Some((s, e));
+                best = Some((s, e, score));
             }
         }
     }
@@ -105,7 +105,7 @@ mod tests {
             None,
             None,
         );
-        let (bs, be) = best_span_from_logits(&s, &e, 4).expect("span");
+        let (bs, be, _score) = best_span_from_logits(&s, &e, 4).expect("span");
         let answer = span_text(&toks, bs, be, 4);
         assert!(!answer.is_empty());
     }

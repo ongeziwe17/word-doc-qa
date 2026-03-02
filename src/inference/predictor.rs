@@ -9,6 +9,7 @@ pub struct AnswerPrediction {
     pub source_doc: String,
     pub source_chunk_id: usize,
     pub retrieval_score: f64,
+    pub span_score: f32,
 }
 
 pub fn answer_question(
@@ -19,21 +20,36 @@ pub fn answer_question(
     model_state: Option<&LinearSpanModelState>,
 ) -> Option<AnswerPrediction> {
     let top = retrieve_top_k(chunks, question, top_k.max(1));
-    let best = top.first()?;
 
-    let start_prior = model_state.map(|m| m.start_bias.as_slice());
-    let end_prior = model_state.map(|m| m.end_bias.as_slice());
-    let (start_logits, end_logits, tokens) =
-        compute_token_logits(&best.chunk.text, question, start_prior, end_prior);
-    let (start, end) = best_span_from_logits(&start_logits, &end_logits, max_answer_words)?;
-    let answer = span_text(&tokens, start, end, max_answer_words);
+    let mut best_pred: Option<AnswerPrediction> = None;
 
-    Some(AnswerPrediction {
-        answer,
-        source_doc: best.chunk.doc_id.clone(),
-        source_chunk_id: best.chunk.chunk_id,
-        retrieval_score: best.score,
-    })
+    for candidate in top {
+        let start_prior = model_state.map(|m| m.start_bias.as_slice());
+        let end_prior = model_state.map(|m| m.end_bias.as_slice());
+        let (start_logits, end_logits, tokens) =
+            compute_token_logits(&candidate.chunk.text, question, start_prior, end_prior);
+        let (start, end, span_score) =
+            best_span_from_logits(&start_logits, &end_logits, max_answer_words)?;
+        let answer = span_text(&tokens, start, end, max_answer_words);
+
+        let pred = AnswerPrediction {
+            answer,
+            source_doc: candidate.chunk.doc_id.clone(),
+            source_chunk_id: candidate.chunk.chunk_id,
+            retrieval_score: candidate.score,
+            span_score,
+        };
+
+        let is_better = best_pred
+            .as_ref()
+            .map(|b| pred.span_score > b.span_score)
+            .unwrap_or(true);
+        if is_better {
+            best_pred = Some(pred);
+        }
+    }
+
+    best_pred
 }
 
 #[cfg(test)]

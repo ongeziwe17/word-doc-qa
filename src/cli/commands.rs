@@ -78,8 +78,12 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
     ) {
         Some(pred) => {
             println!(
-                "Answer => {}\nSource => {}#{}\nScore => {:.3}",
-                pred.answer, pred.source_doc, pred.source_chunk_id, pred.retrieval_score
+                "Answer => {}\nSource => {}#{}\nRetrieval score => {:.3}\nSpan score => {:.3}",
+                pred.answer,
+                pred.source_doc,
+                pred.source_chunk_id,
+                pred.retrieval_score,
+                pred.span_score
             );
         }
         None => {
