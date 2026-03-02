@@ -1,0 +1,15 @@
+{"epoch":1,"avg_loss":3.2188758850097656,"samples_seen":1}
+{"epoch":2,"avg_loss":3.2188758850097656,"samples_seen":1}
+{"epoch":3,"avg_loss":3.2188758850097656,"samples_seen":1}
+{"epoch":1,"avg_loss":5.592212677001953,"samples_seen":4}
+{"epoch":2,"avg_loss":5.592212677001953,"samples_seen":4}
+{"epoch":3,"avg_loss":5.592212677001953,"samples_seen":4}
+{"epoch":1,"avg_loss":5.16151762008667,"samples_seen":3}
+{"epoch":2,"avg_loss":5.160970211029053,"samples_seen":3}
+{"epoch":3,"avg_loss":5.160423278808594,"samples_seen":3}
+{"epoch":1,"avg_loss":5.16151762008667,"samples_seen":3}
+{"epoch":2,"avg_loss":5.160970211029053,"samples_seen":3}
+{"epoch":3,"avg_loss":5.160423278808594,"samples_seen":3}
+{"epoch":1,"avg_loss":5.16151762008667,"samples_seen":3}
+{"epoch":2,"avg_loss":5.1595377922058105,"samples_seen":3}
+{"epoch":3,"avg_loss":5.157491207122803,"samples_seen":3}
