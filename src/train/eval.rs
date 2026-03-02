@@ -2,6 +2,8 @@ use crate::data::corpus::Chunk;
 use crate::inference::answer_question;
 use crate::model::QaModel;
 use crate::tokenization::qa_dataset::QaTrainingSample;
+use crate::tokenization::tokenizer::QaTokenizer;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct EvalMetrics {
@@ -10,10 +12,16 @@ pub struct EvalMetrics {
     pub total: usize,
 }
 
-pub fn evaluate_on_samples(samples: &[QaTrainingSample], model: Option<&QaModel>) -> EvalMetrics {
+pub fn evaluate_on_samples(
+    samples: &[QaTrainingSample],
+    model: Option<&QaModel>,
+    tokenizer_vocab: &HashMap<String, u32>,
+) -> EvalMetrics {
     if samples.is_empty() {
         return EvalMetrics::default();
     }
+
+    let tokenizer = QaTokenizer::from_vocab(tokenizer_vocab.clone());
 
     let mut em_sum = 0.0;
     let mut f1_sum = 0.0;
@@ -31,6 +39,7 @@ pub fn evaluate_on_samples(samples: &[QaTrainingSample], model: Option<&QaModel>
             1,
             sample.answer_text.split_whitespace().count().max(1),
             model,
+            Some(&tokenizer),
         )
         .map(|p| p.answer)
         .unwrap_or_default();
@@ -92,6 +101,7 @@ fn token_f1(pred: &str, gold: &str) -> f64 {
 mod tests {
     use super::evaluate_on_samples;
     use crate::tokenization::qa_dataset::QaTrainingSample;
+    use std::collections::HashMap;
 
     #[test]
     fn eval_returns_valid_range() {
@@ -105,7 +115,7 @@ mod tests {
             end_position: 2,
         }];
 
-        let metrics = evaluate_on_samples(&samples, None);
+        let metrics = evaluate_on_samples(&samples, None, &HashMap::new());
         assert!(metrics.exact_match >= 0.0 && metrics.exact_match <= 1.0);
         assert!(metrics.token_f1 >= 0.0 && metrics.token_f1 <= 1.0);
         assert_eq!(metrics.total, 1);

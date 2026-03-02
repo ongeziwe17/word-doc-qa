@@ -4,7 +4,7 @@ use crate::cli::args::{AskArgs, TrainArgs};
 use crate::data::load_corpus_from_dir;
 use crate::inference::answer_question;
 use crate::model::QaModelConfig;
-use crate::tokenization::{build_tokenizer_from_texts, build_weak_supervised_samples};
+use crate::tokenization::{QaTokenizer, build_tokenizer_from_texts, build_weak_supervised_samples};
 use crate::train::{
     TrainConfig, evaluate_on_samples, load_checkpoint, load_latest_checkpoint,
     train_weak_supervised,
@@ -32,7 +32,8 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
         ..TrainConfig::default()
     };
 
-    let summary = train_weak_supervised(&qa_samples, &model_config, &train_config)?;
+    let summary =
+        train_weak_supervised(&qa_samples, &model_config, tokenizer.vocab(), &train_config)?;
     println!(
         "Training complete => epochs: {}, final_avg_loss: {:.4}",
         summary.epochs_completed, summary.final_avg_loss
@@ -51,7 +52,7 @@ pub fn run_train(args: TrainArgs) -> Result<()> {
         );
     }
 
-    let eval = evaluate_on_samples(&qa_samples, Some(&summary.model));
+    let eval = evaluate_on_samples(&qa_samples, Some(&summary.model), tokenizer.vocab());
     println!(
         "Eval => EM: {:.3}, F1: {:.3}, samples: {}",
         eval.exact_match, eval.token_f1, eval.total
@@ -76,6 +77,9 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
     };
 
     let model = checkpoint.as_ref().map(|c| &c.model);
+    let tokenizer = checkpoint
+        .as_ref()
+        .map(|c| QaTokenizer::from_vocab(c.tokenizer_vocab.clone()));
 
     match answer_question(
         &chunks,
@@ -83,6 +87,7 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
         args.top_k,
         args.max_answer_len,
         model,
+        tokenizer.as_ref(),
     ) {
         Some(pred) => {
             println!(

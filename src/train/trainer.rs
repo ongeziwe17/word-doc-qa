@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 
@@ -14,6 +15,17 @@ use crate::train::metrics::{EpochMetrics, TrainingHistory};
 pub struct OptimizerState {
     pub step: usize,
     pub learning_rate: f32,
+    pub beta1: f32,
+    pub beta2: f32,
+    pub epsilon: f32,
+    pub m_start_proj: Vec<f32>,
+    pub v_start_proj: Vec<f32>,
+    pub m_end_proj: Vec<f32>,
+    pub v_end_proj: Vec<f32>,
+    pub m_start_bias: f32,
+    pub v_start_bias: f32,
+    pub m_end_bias: f32,
+    pub v_end_bias: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +40,7 @@ pub struct TrainingSummary {
 pub fn train_weak_supervised(
     samples: &[QaTrainingSample],
     model_config: &QaModelConfig,
+    tokenizer_vocab: &HashMap<String, u32>,
     config: &TrainConfig,
 ) -> Result<TrainingSummary> {
     fs::create_dir_all(&config.logs_dir)
@@ -37,6 +50,17 @@ pub fn train_weak_supervised(
     let mut opt_state = OptimizerState {
         step: 0,
         learning_rate: config.learning_rate as f32,
+        beta1: 0.9,
+        beta2: 0.999,
+        epsilon: 1e-8,
+        m_start_proj: vec![0.0; model.start_proj.len()],
+        v_start_proj: vec![0.0; model.start_proj.len()],
+        m_end_proj: vec![0.0; model.end_proj.len()],
+        v_end_proj: vec![0.0; model.end_proj.len()],
+        m_start_bias: 0.0,
+        v_start_bias: 0.0,
+        m_end_bias: 0.0,
+        v_end_bias: 0.0,
     };
 
     let (train_samples, val_samples) = split_train_val(samples, config.val_split);
@@ -50,7 +74,7 @@ pub fn train_weak_supervised(
 
         for batch in train_samples.chunks(config.batch_size.max(1)) {
             let (batch_loss, grads) = batch_loss_and_grads(&model, batch);
-            apply_sgd_step(&mut model, &mut opt_state, grads);
+            apply_adam_step(&mut model, &mut opt_state, grads);
             total_loss += batch_loss as f64 * batch.len() as f64;
             seen += batch.len();
         }
@@ -67,7 +91,7 @@ pub fn train_weak_supervised(
             average_loss(&model, val_samples)
         };
 
-        let eval = evaluate_on_samples(val_samples, Some(&model));
+        let eval = evaluate_on_samples(val_samples, Some(&model), tokenizer_vocab);
         println!(
             "epoch {epoch} => train_loss: {avg_loss:.4}, val_loss: {val_loss:.4}, em: {:.3}, f1: {:.3}",
             eval.exact_match, eval.token_f1
@@ -88,6 +112,7 @@ pub fn train_weak_supervised(
             train_config: config.clone(),
             model: model.clone(),
             optimizer_state: opt_state.clone(),
+            tokenizer_vocab: tokenizer_vocab.clone(),
         };
         let _ = save_checkpoint(&config.checkpoint_dir, &checkpoint)?;
 
@@ -113,10 +138,10 @@ pub fn train_weak_supervised(
     })
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ModelGrads {
-    start_weight: f32,
-    end_weight: f32,
+    start_proj: Vec<f32>,
+    end_proj: Vec<f32>,
     start_bias: f32,
     end_bias: f32,
 }
@@ -166,8 +191,8 @@ fn sample_loss(model: &QaModel, sample: &QaTrainingSample) -> f32 {
 fn batch_loss_and_grads(model: &QaModel, batch: &[QaTrainingSample]) -> (f32, ModelGrads) {
     let mut loss = 0.0f32;
     let mut grads = ModelGrads {
-        start_weight: 0.0,
-        end_weight: 0.0,
+        start_proj: vec![0.0; model.start_proj.len()],
+        end_proj: vec![0.0; model.end_proj.len()],
         start_bias: 0.0,
         end_bias: 0.0,
     };
@@ -190,19 +215,26 @@ fn batch_loss_and_grads(model: &QaModel, batch: &[QaTrainingSample]) -> (f32, Mo
         loss += -end_probs[y_end].max(1e-8).ln();
 
         for i in 0..valid_len {
-            let x = sample.input_ids[i] as f32 / model.config.vocab_size.max(1) as f32;
+            let tok = sample.input_ids[i] as usize;
+            let emb = &model.embeddings[tok.min(model.embeddings.len() - 1)];
             let d_start = start_probs[i] - if i == y_start { 1.0 } else { 0.0 };
             let d_end = end_probs[i] - if i == y_end { 1.0 } else { 0.0 };
-            grads.start_weight += d_start * x;
+            for (j, x) in emb.iter().enumerate() {
+                grads.start_proj[j] += d_start * x;
+                grads.end_proj[j] += d_end * x;
+            }
             grads.start_bias += d_start;
-            grads.end_weight += d_end * x;
             grads.end_bias += d_end;
         }
     }
 
     let denom = batch.len().max(1) as f32;
-    grads.start_weight /= denom;
-    grads.end_weight /= denom;
+    for g in &mut grads.start_proj {
+        *g /= denom;
+    }
+    for g in &mut grads.end_proj {
+        *g /= denom;
+    }
     grads.start_bias /= denom;
     grads.end_bias /= denom;
 
@@ -216,13 +248,38 @@ fn softmax(logits: &[f32]) -> Vec<f32> {
     exps.into_iter().map(|x| x / sum).collect()
 }
 
-fn apply_sgd_step(model: &mut QaModel, opt: &mut OptimizerState, grads: ModelGrads) {
-    let lr = opt.learning_rate;
-    model.start_weight -= lr * grads.start_weight;
-    model.end_weight -= lr * grads.end_weight;
-    model.start_bias -= lr * grads.start_bias;
-    model.end_bias -= lr * grads.end_bias;
+fn apply_adam_step(model: &mut QaModel, opt: &mut OptimizerState, grads: ModelGrads) {
     opt.step += 1;
+    let t = opt.step as f32;
+
+    for i in 0..model.start_proj.len() {
+        opt.m_start_proj[i] =
+            opt.beta1 * opt.m_start_proj[i] + (1.0 - opt.beta1) * grads.start_proj[i];
+        opt.v_start_proj[i] =
+            opt.beta2 * opt.v_start_proj[i] + (1.0 - opt.beta2) * grads.start_proj[i].powi(2);
+        let m_hat = opt.m_start_proj[i] / (1.0 - opt.beta1.powf(t));
+        let v_hat = opt.v_start_proj[i] / (1.0 - opt.beta2.powf(t));
+        model.start_proj[i] -= opt.learning_rate * m_hat / (v_hat.sqrt() + opt.epsilon);
+
+        opt.m_end_proj[i] = opt.beta1 * opt.m_end_proj[i] + (1.0 - opt.beta1) * grads.end_proj[i];
+        opt.v_end_proj[i] =
+            opt.beta2 * opt.v_end_proj[i] + (1.0 - opt.beta2) * grads.end_proj[i].powi(2);
+        let m_hat_e = opt.m_end_proj[i] / (1.0 - opt.beta1.powf(t));
+        let v_hat_e = opt.v_end_proj[i] / (1.0 - opt.beta2.powf(t));
+        model.end_proj[i] -= opt.learning_rate * m_hat_e / (v_hat_e.sqrt() + opt.epsilon);
+    }
+
+    opt.m_start_bias = opt.beta1 * opt.m_start_bias + (1.0 - opt.beta1) * grads.start_bias;
+    opt.v_start_bias = opt.beta2 * opt.v_start_bias + (1.0 - opt.beta2) * grads.start_bias.powi(2);
+    let ms = opt.m_start_bias / (1.0 - opt.beta1.powf(t));
+    let vs = opt.v_start_bias / (1.0 - opt.beta2.powf(t));
+    model.start_bias -= opt.learning_rate * ms / (vs.sqrt() + opt.epsilon);
+
+    opt.m_end_bias = opt.beta1 * opt.m_end_bias + (1.0 - opt.beta1) * grads.end_bias;
+    opt.v_end_bias = opt.beta2 * opt.v_end_bias + (1.0 - opt.beta2) * grads.end_bias.powi(2);
+    let me = opt.m_end_bias / (1.0 - opt.beta1.powf(t));
+    let ve = opt.v_end_bias / (1.0 - opt.beta2.powf(t));
+    model.end_bias -= opt.learning_rate * me / (ve.sqrt() + opt.epsilon);
 }
 
 fn append_metrics_line(logs_dir: &str, metrics: &EpochMetrics) -> Result<()> {
@@ -239,6 +296,7 @@ mod tests {
     use crate::model::QaModelConfig;
     use crate::tokenization::qa_dataset::QaTrainingSample;
     use crate::train::config::TrainConfig;
+    use std::collections::HashMap;
 
     #[test]
     fn trainer_runs_and_returns_summary() {
@@ -260,8 +318,13 @@ mod tests {
             ..Default::default()
         };
 
-        let summary = train_weak_supervised(&samples, &QaModelConfig::default(), &config)
-            .expect("train should succeed");
+        let summary = train_weak_supervised(
+            &samples,
+            &QaModelConfig::default(),
+            &HashMap::new(),
+            &config,
+        )
+        .expect("train should succeed");
 
         assert!(summary.epochs_completed >= 1);
         assert!(!summary.history.epochs.is_empty());

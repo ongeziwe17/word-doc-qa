@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,6 +16,7 @@ pub struct TrainingCheckpoint {
     pub train_config: TrainConfig,
     pub model: QaModel,
     pub optimizer_state: OptimizerState,
+    pub tokenizer_vocab: HashMap<String, u32>,
 }
 
 pub fn save_checkpoint(dir: &str, ckpt: &TrainingCheckpoint) -> Result<PathBuf> {
@@ -63,6 +65,7 @@ mod tests {
     use crate::model::{QaModel, QaModelConfig};
     use crate::train::config::TrainConfig;
     use crate::train::trainer::OptimizerState;
+    use std::collections::HashMap;
 
     #[test]
     fn saves_and_loads_checkpoint() {
@@ -76,7 +79,19 @@ mod tests {
             optimizer_state: OptimizerState {
                 step: 3,
                 learning_rate: 0.001,
+                beta1: 0.9,
+                beta2: 0.999,
+                epsilon: 1e-8,
+                m_start_proj: vec![0.0; 128],
+                v_start_proj: vec![0.0; 128],
+                m_end_proj: vec![0.0; 128],
+                v_end_proj: vec![0.0; 128],
+                m_start_bias: 0.0,
+                v_start_bias: 0.0,
+                m_end_bias: 0.0,
+                v_end_bias: 0.0,
             },
+            tokenizer_vocab: HashMap::new(),
         };
 
         let path = save_checkpoint(dir, &ckpt).expect("save checkpoint");

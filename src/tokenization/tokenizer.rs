@@ -1,9 +1,5 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
-use tokenizers::Tokenizer;
-use tokenizers::models::wordlevel::WordLevelBuilder;
-use tokenizers::normalizers::unicode::NFC;
-use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
 const PAD_TOKEN: &str = "[PAD]";
 const UNK_TOKEN: &str = "[UNK]";
@@ -16,46 +12,59 @@ pub struct TokenizedText {
 
 #[derive(Debug, Clone)]
 pub struct QaTokenizer {
-    tokenizer: Tokenizer,
+    vocab: HashMap<String, u32>,
+    unk_id: u32,
 }
 
 impl QaTokenizer {
-    pub fn encode(&self, text: &str, max_len: usize) -> Result<TokenizedText> {
-        let encoding = self
-            .tokenizer
-            .encode(text, true)
-            .map_err(anyhow::Error::msg)
-            .with_context(|| "failed to encode text")?;
+    pub fn from_vocab(vocab: HashMap<String, u32>) -> Self {
+        Self { vocab, unk_id: 1 }
+    }
 
-        let mut input_ids = encoding.get_ids().to_vec();
-        if input_ids.len() > max_len {
-            input_ids.truncate(max_len);
+    pub fn vocab(&self) -> &HashMap<String, u32> {
+        &self.vocab
+    }
+
+    pub fn encode_with_tokens(
+        &self,
+        text: &str,
+        max_len: usize,
+    ) -> Result<(TokenizedText, Vec<String>)> {
+        let mut tokens: Vec<String> = text
+            .split_whitespace()
+            .map(|t| {
+                t.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase()
+            })
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        if tokens.len() > max_len {
+            tokens.truncate(max_len);
         }
 
+        let input_ids = tokens
+            .iter()
+            .map(|tok| self.vocab.get(tok).copied().unwrap_or(self.unk_id))
+            .collect::<Vec<_>>();
         let attention_mask = vec![1; input_ids.len()];
 
-        Ok(TokenizedText {
-            input_ids,
-            attention_mask,
-        })
+        Ok((
+            TokenizedText {
+                input_ids,
+                attention_mask,
+            },
+            tokens,
+        ))
+    }
+
+    pub fn encode(&self, text: &str, max_len: usize) -> Result<TokenizedText> {
+        Ok(self.encode_with_tokens(text, max_len)?.0)
     }
 }
 
 pub fn build_tokenizer_from_texts(texts: &[String], vocab_limit: usize) -> Result<QaTokenizer> {
-    let vocab = build_vocab(texts, vocab_limit);
-
-    let model = WordLevelBuilder::default()
-        .vocab(vocab)
-        .unk_token(UNK_TOKEN.to_string())
-        .build()
-        .map_err(anyhow::Error::msg)
-        .with_context(|| "failed to build word-level tokenizer model")?;
-
-    let mut tokenizer = Tokenizer::new(model);
-    tokenizer.with_normalizer(NFC);
-    tokenizer.with_pre_tokenizer(Whitespace);
-
-    Ok(QaTokenizer { tokenizer })
+    Ok(QaTokenizer::from_vocab(build_vocab(texts, vocab_limit)))
 }
 
 fn build_vocab(texts: &[String], vocab_limit: usize) -> HashMap<String, u32> {
@@ -63,8 +72,12 @@ fn build_vocab(texts: &[String], vocab_limit: usize) -> HashMap<String, u32> {
 
     for text in texts {
         for token in text.split_whitespace() {
-            let token = token.to_lowercase();
-            *counts.entry(token).or_default() += 1;
+            let token = token
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
+            if !token.is_empty() {
+                *counts.entry(token).or_default() += 1;
+            }
         }
     }
 
@@ -85,7 +98,8 @@ fn build_vocab(texts: &[String], vocab_limit: usize) -> HashMap<String, u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::build_tokenizer_from_texts;
+    use super::{QaTokenizer, build_tokenizer_from_texts};
+    use std::collections::HashMap;
 
     #[test]
     fn encodes_known_and_unknown_tokens() {
@@ -111,5 +125,16 @@ mod tests {
         let encoded = tokenizer.encode("a b c d e", 3).expect("encode");
         assert_eq!(encoded.input_ids.len(), 3);
         assert_eq!(encoded.attention_mask, vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn can_rebuild_from_vocab() {
+        let mut vocab = HashMap::new();
+        vocab.insert("[PAD]".to_string(), 0);
+        vocab.insert("[UNK]".to_string(), 1);
+        vocab.insert("rust".to_string(), 2);
+        let tok = QaTokenizer::from_vocab(vocab);
+        let enc = tok.encode("rust rocks", 10).expect("enc");
+        assert_eq!(enc.input_ids, vec![2, 1]);
     }
 }

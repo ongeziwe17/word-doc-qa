@@ -29,8 +29,9 @@ impl Default for QaModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaModel {
     pub config: QaModelConfig,
-    pub start_weight: f32,
-    pub end_weight: f32,
+    pub embeddings: Vec<Vec<f32>>,
+    pub start_proj: Vec<f32>,
+    pub end_proj: Vec<f32>,
     pub start_bias: f32,
     pub end_bias: f32,
 }
@@ -43,10 +44,28 @@ pub struct QaModelOutput {
 
 impl QaModel {
     pub fn new(config: QaModelConfig) -> Self {
+        let vocab = config.vocab_size.max(2);
+        let d_model = config.d_model.max(8);
+
+        let mut embeddings = vec![vec![0.0; d_model]; vocab];
+        for (tok, emb) in embeddings.iter_mut().enumerate() {
+            for (d, v) in emb.iter_mut().enumerate() {
+                *v = (((tok * 31 + d * 17) % 997) as f32 / 997.0) * 0.02 - 0.01;
+            }
+        }
+
+        let start_proj = (0..d_model)
+            .map(|i| (((i * 13) % 101) as f32 / 101.0) * 0.02 - 0.01)
+            .collect();
+        let end_proj = (0..d_model)
+            .map(|i| (((i * 19) % 103) as f32 / 103.0) * 0.02 - 0.01)
+            .collect();
+
         Self {
             config,
-            start_weight: 0.01,
-            end_weight: -0.01,
+            embeddings,
+            start_proj,
+            end_proj,
             start_bias: 0.0,
             end_bias: 0.0,
         }
@@ -57,9 +76,12 @@ impl QaModel {
         let mut end_logits = Vec::with_capacity(input_ids.len());
 
         for token_id in input_ids {
-            let x = *token_id as f32 / self.config.vocab_size.max(1) as f32;
-            start_logits.push(self.start_weight * x + self.start_bias);
-            end_logits.push(self.end_weight * x + self.end_bias);
+            let idx = (*token_id as usize).min(self.embeddings.len().saturating_sub(1));
+            let emb = &self.embeddings[idx];
+            let s = dot(emb, &self.start_proj) + self.start_bias;
+            let e = dot(emb, &self.end_proj) + self.end_bias;
+            start_logits.push(s);
+            end_logits.push(e);
         }
 
         QaModelOutput {
@@ -67,6 +89,10 @@ impl QaModel {
             end_logits,
         }
     }
+}
+
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
 #[cfg(test)]
