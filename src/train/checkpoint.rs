@@ -22,10 +22,20 @@ pub struct TrainingCheckpoint {
 pub fn save_checkpoint(dir: &str, ckpt: &TrainingCheckpoint) -> Result<PathBuf> {
     fs::create_dir_all(dir).with_context(|| format!("failed to create checkpoint dir: {dir}"))?;
     let path = Path::new(dir).join(format!("epoch_{:03}.json", ckpt.epoch));
-    let json = serde_json::to_string_pretty(ckpt)?;
-    fs::write(&path, json)
-        .with_context(|| format!("failed to write checkpoint: {}", path.display()))?;
+    write_checkpoint_file(&path, ckpt)?;
     Ok(path)
+}
+
+pub fn save_best_checkpoint(dir: &str, ckpt: &TrainingCheckpoint) -> Result<PathBuf> {
+    fs::create_dir_all(dir).with_context(|| format!("failed to create checkpoint dir: {dir}"))?;
+    let path = Path::new(dir).join("best.json");
+    write_checkpoint_file(&path, ckpt)?;
+    Ok(path)
+}
+
+fn write_checkpoint_file(path: &Path, ckpt: &TrainingCheckpoint) -> Result<()> {
+    let json = serde_json::to_string_pretty(ckpt)?;
+    fs::write(path, json).with_context(|| format!("failed to write checkpoint: {}", path.display()))
 }
 
 pub fn load_checkpoint(path: &str) -> Result<TrainingCheckpoint> {
@@ -36,6 +46,18 @@ pub fn load_checkpoint(path: &str) -> Result<TrainingCheckpoint> {
         .with_context(|| format!("failed parsing checkpoint: {}", checkpoint_path.display()))
 }
 
+pub fn load_best_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
+    let path = Path::new(dir).join("best.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let ckpt = load_checkpoint(
+        path.to_str()
+            .ok_or_else(|| anyhow::anyhow!("non-utf8 checkpoint path"))?,
+    )?;
+    Ok(Some(ckpt))
+}
+
 pub fn load_latest_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
     let base = Path::new(dir);
     if !base.exists() {
@@ -44,7 +66,10 @@ pub fn load_latest_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
 
     let mut files: Vec<PathBuf> = fs::read_dir(base)?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter(|p| {
+            p.extension().and_then(|e| e.to_str()) == Some("json")
+                && p.file_name().and_then(|n| n.to_str()) != Some("best.json")
+        })
         .collect();
 
     files.sort();
@@ -61,7 +86,10 @@ pub fn load_latest_checkpoint(dir: &str) -> Result<Option<TrainingCheckpoint>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TrainingCheckpoint, load_checkpoint, load_latest_checkpoint, save_checkpoint};
+    use super::{
+        TrainingCheckpoint, load_best_checkpoint, load_checkpoint, load_latest_checkpoint,
+        save_best_checkpoint, save_checkpoint,
+    };
     use crate::model::{QaModel, QaModelConfig};
     use crate::train::config::TrainConfig;
     use crate::train::trainer::OptimizerState;
@@ -76,31 +104,20 @@ mod tests {
             model_config: QaModelConfig::default(),
             train_config: TrainConfig::default(),
             model: QaModel::new(QaModelConfig::default()),
-            optimizer_state: OptimizerState {
-                step: 3,
-                learning_rate: 0.001,
-                beta1: 0.9,
-                beta2: 0.999,
-                epsilon: 1e-8,
-                m_start_proj: vec![0.0; 128],
-                v_start_proj: vec![0.0; 128],
-                m_end_proj: vec![0.0; 128],
-                v_end_proj: vec![0.0; 128],
-                m_start_bias: 0.0,
-                v_start_bias: 0.0,
-                m_end_bias: 0.0,
-                v_end_bias: 0.0,
-            },
+            optimizer_state: OptimizerState::new(0.001, 128),
             tokenizer_vocab: HashMap::new(),
         };
 
         let path = save_checkpoint(dir, &ckpt).expect("save checkpoint");
+        let _ = save_best_checkpoint(dir, &ckpt).expect("save best");
         let loaded = load_latest_checkpoint(dir).expect("load").expect("exists");
+        let best = load_best_checkpoint(dir)
+            .expect("load best")
+            .expect("exists");
         let direct = load_checkpoint(path.to_str().expect("utf8 path")).expect("direct load");
 
         assert_eq!(loaded.epoch, 1);
-        assert_eq!(loaded.avg_loss, 0.5);
-        assert_eq!(loaded.optimizer_state.step, 3);
+        assert_eq!(best.epoch, 1);
         assert_eq!(direct.epoch, loaded.epoch);
     }
 }

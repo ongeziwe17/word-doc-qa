@@ -6,8 +6,8 @@ use crate::inference::answer_question;
 use crate::model::QaModelConfig;
 use crate::tokenization::{QaTokenizer, build_tokenizer_from_texts, build_weak_supervised_samples};
 use crate::train::{
-    TrainConfig, evaluate_on_samples, load_checkpoint, load_latest_checkpoint,
-    train_weak_supervised,
+    TrainConfig, evaluate_on_samples, load_best_checkpoint, load_checkpoint,
+    load_latest_checkpoint, train_weak_supervised,
 };
 
 pub fn run_train(args: TrainArgs) -> Result<()> {
@@ -72,6 +72,8 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
 
     let checkpoint = if let Some(path) = args.checkpoint_path.as_ref() {
         Some(load_checkpoint(path)?)
+    } else if let Some(best) = load_best_checkpoint(&args.checkpoint_dir)? {
+        Some(best)
     } else {
         load_latest_checkpoint(&args.checkpoint_dir)?
     };
